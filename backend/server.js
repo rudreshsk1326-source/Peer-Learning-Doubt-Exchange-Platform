@@ -7,7 +7,7 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Connect to MongoDB
-console.log('MONGODB_URI:', process.env.MONGODB_URI ? 'found' : 'undefined');
+console.log('MONGODB_URI value:', process.env.MONGODB_URI);
 mongoose.connect(process.env.MONGODB_URI)
   .then(() => console.log('MongoDB connected'))
   .catch(err => console.error('MongoDB connection error:', err));
