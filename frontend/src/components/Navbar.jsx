@@ -19,28 +19,28 @@ const Navbar = () => {
         </Link>
         
         <div className="nav-links">
-          <Link to="/doubts">📚 Doubts</Link>
+          <Link to="/doubts">Doubts</Link>
           {user ? (
             <>
-              <Link to="/dashboard">🏠 Dashboard</Link>
-              <Link to="/ask">❓ Ask</Link>
-              <Link to={`/profile/${user.id}`}>👤 Profile</Link>
+              <Link to="/dashboard">Dashboard</Link>
+              <Link to="/ask">Ask</Link>
+              <Link to={`/profile/${user.id}`}>Profile</Link>
               {user.role === 'admin' && (
                 <>
-                  <Link to="/admin">⚙️ Admin</Link>
-                  <Link to="/admin/insights">📊 Insights</Link>
+                  <Link to="/admin">Admin</Link>
+                  <Link to="/admin/insights">Insights</Link>
                 </>
               )}
               <NotificationBell />
               <span className="nav-user">Hi, {user.name}</span>
               <button onClick={handleLogout} className="nav-btn">
-                🚪 Logout
+                Logout
               </button>
             </>
           ) : (
             <>
-              <Link to="/login">🔑 Login</Link>
-              <Link to="/signup">📝 Sign Up</Link>
+              <Link to="/login">Login</Link>
+              <Link to="/signup">Sign Up</Link>
             </>
           )}
         </div>
