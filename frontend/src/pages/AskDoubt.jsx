@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import axios from 'axios';
+import api from '../utils/api';
 import { useAuth } from '../context/AuthContext';
 import SimilarQuestions from '../components/SimilarQuestions';
 import TagSuggestions from '../components/TagSuggestions';
@@ -58,7 +58,7 @@ const AskDoubt = () => {
 
       setSimilarLoading(true);
       try {
-        const response = await axios.post('/api/ai/similar-questions', {
+        const response = await api.post('/api/ai/similar-questions', {
           title: debouncedTitle,
           description: debouncedDescription,
           tags: formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag)
@@ -83,7 +83,7 @@ const AskDoubt = () => {
     try {
       const tagsArray = formData.tags.split(',').map(tag => tag.trim()).filter(tag => tag);
       
-      const response = await axios.post('/api/doubts', {
+      const response = await api.post('/api/doubts', {
         title: formData.title,
         description: formData.description,
         subject: formData.subject,
