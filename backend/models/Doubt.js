@@ -55,7 +55,9 @@ const doubtSchema = new mongoose.Schema({
   views: {
     type: Number,
     default: 0
-  }
+  },
+  aiSummary: { type: String },
+  difficultyLevel: { type: String }
 }, {
   timestamps: true
 });

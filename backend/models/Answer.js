@@ -28,7 +28,9 @@ const answerSchema = new mongoose.Schema({
   isAccepted: {
     type: Boolean,
     default: false
-  }
+  },
+  isMentorAnswer: { type: Boolean, default: false },
+  isAIAnswer: { type: Boolean, default: false }
 }, {
   timestamps: true
 });

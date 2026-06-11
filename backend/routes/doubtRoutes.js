@@ -1,102 +1,55 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const { readFile, writeFile, generateId } = require('../utils/fileStorage');
+const auth = require('../middleware/auth');
+const Doubt = require('../models/Doubt');
 const { generateQuestionAnalysis } = require('../utils/aiAnalysis');
 
 const router = express.Router();
 
-// Auth middleware
-const auth = (req, res, next) => {
-  try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ message: 'No token provided' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
-    const users = readFile('users.json');
-    const user = users.find(u => u.id === decoded.id);
-
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
-    }
-
-    req.user = user;
-    next();
-  } catch (error) {
-    res.status(401).json({ message: 'Invalid token' });
-  }
-};
-
 // Get all doubts
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const doubts = readFile('doubts.json');
-    const users = readFile('users.json');
-    const answers = readFile('answers.json');
+    const doubts = await Doubt.find()
+      .populate('author', 'name role isVerified')
+      .sort({ createdAt: -1 })
+      .lean();
 
-    const doubtsWithDetails = doubts.map(doubt => {
-      const author = users.find(u => u.id === doubt.authorId);
-      const doubtAnswers = answers.filter(a => a.doubtId === doubt.id);
-      
-      return {
-        ...doubt,
-        author: author ? { name: author.name, role: author.role, isVerified: author.isVerified } : null,
-        answerCount: doubtAnswers.length,
-        voteScore: doubt.upvotes.length - doubt.downvotes.length
-      };
-    });
+    const result = doubts.map(d => ({
+      ...d,
+      id: d._id,
+      answerCount: d.answers.length,
+      voteScore: d.votes.upvotes.length - d.votes.downvotes.length
+    }));
 
-    res.json({ doubts: doubtsWithDetails.reverse() });
+    res.json({ doubts: result });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
 // Get single doubt
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const doubts = readFile('doubts.json');
-    const users = readFile('users.json');
-    const answers = readFile('answers.json');
+    const doubt = await Doubt.findById(req.params.id)
+      .populate('author', 'name role isVerified')
+      .populate({
+        path: 'answers',
+        populate: { path: 'author', select: 'name role isVerified' }
+      })
+      .lean();
 
-    const doubt = doubts.find(d => d.id === req.params.id);
-    if (!doubt) {
-      return res.status(404).json({ message: 'Doubt not found' });
-    }
+    if (!doubt) return res.status(404).json({ message: 'Doubt not found' });
 
-    const author = users.find(u => u.id === doubt.authorId);
-    const doubtAnswers = answers.filter(a => a.doubtId === doubt.id).map(answer => {
-      const answerAuthor = users.find(u => u.id === answer.authorId);
-      return {
-        ...answer,
-        author: answerAuthor ? { 
-          name: answerAuthor.name, 
-          role: answerAuthor.role, 
-          isVerified: answerAuthor.isVerified 
-        } : null,
-        voteScore: answer.upvotes.length - answer.downvotes.length
-      };
-    }).sort((a, b) => {
-      // Sort mentor answers first, then by creation date
-      if (a.isMentorAnswer && !b.isMentorAnswer) return -1;
-      if (!a.isMentorAnswer && b.isMentorAnswer) return 1;
-      return new Date(a.createdAt) - new Date(b.createdAt);
-    });
-
-    // Increment views
-    doubt.views = (doubt.views || 0) + 1;
-    writeFile('doubts.json', doubts);
+    await Doubt.findByIdAndUpdate(req.params.id, { $inc: { views: 1 } });
 
     res.json({
       ...doubt,
-      author: author ? { 
-        name: author.name, 
-        role: author.role, 
-        isVerified: author.isVerified 
-      } : null,
-      answers: doubtAnswers,
-      voteScore: doubt.upvotes.length - doubt.downvotes.length
+      id: doubt._id,
+      voteScore: doubt.votes.upvotes.length - doubt.votes.downvotes.length,
+      answers: doubt.answers.map(a => ({
+        ...a,
+        id: a._id,
+        voteScore: a.votes.upvotes.length - a.votes.downvotes.length
+      }))
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -108,66 +61,39 @@ router.post('/', auth, async (req, res) => {
   try {
     const { title, description, subject, tags } = req.body;
 
-    const doubt = {
-      id: generateId(),
-      title,
-      description,
-      subject,
-      tags: tags || [],
-      authorId: req.user.id,
-      status: 'open',
-      upvotes: [],
-      downvotes: [],
-      views: 0,
-      createdAt: new Date().toISOString()
-    };
-
-    // Generate AI analysis
     const aiAnalysis = await generateQuestionAnalysis(title, description);
-    doubt.aiSummary = aiAnalysis.aiSummary;
-    doubt.difficultyLevel = aiAnalysis.difficultyLevel;
 
-    const doubts = readFile('doubts.json');
-    doubts.push(doubt);
-    writeFile('doubts.json', doubts);
-
-    res.status(201).json({
-      ...doubt,
-      author: { 
-        name: req.user.name, 
-        role: req.user.role, 
-        isVerified: req.user.isVerified 
-      }
+    const doubt = await Doubt.create({
+      title, description, subject,
+      tags: tags || [],
+      author: req.user._id,
+      aiSummary: aiAnalysis.aiSummary,
+      difficultyLevel: aiAnalysis.difficultyLevel
     });
+
+    await doubt.populate('author', 'name role isVerified');
+
+    res.status(201).json({ ...doubt.toObject(), id: doubt._id });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
 // Vote on doubt
-router.post('/:id/vote', auth, (req, res) => {
+router.post('/:id/vote', auth, async (req, res) => {
   try {
     const { type } = req.body;
-    const doubts = readFile('doubts.json');
-    const doubt = doubts.find(d => d.id === req.params.id);
+    const doubt = await Doubt.findById(req.params.id);
+    if (!doubt) return res.status(404).json({ message: 'Doubt not found' });
 
-    if (!doubt) {
-      return res.status(404).json({ message: 'Doubt not found' });
-    }
+    doubt.votes.upvotes = doubt.votes.upvotes.filter(id => !id.equals(req.user._id));
+    doubt.votes.downvotes = doubt.votes.downvotes.filter(id => !id.equals(req.user._id));
 
-    // Remove existing votes
-    doubt.upvotes = doubt.upvotes.filter(id => id !== req.user.id);
-    doubt.downvotes = doubt.downvotes.filter(id => id !== req.user.id);
+    if (type === 'up') doubt.votes.upvotes.push(req.user._id);
+    else if (type === 'down') doubt.votes.downvotes.push(req.user._id);
 
-    // Add new vote
-    if (type === 'up') {
-      doubt.upvotes.push(req.user.id);
-    } else if (type === 'down') {
-      doubt.downvotes.push(req.user.id);
-    }
-
-    writeFile('doubts.json', doubts);
-    res.json({ voteScore: doubt.upvotes.length - doubt.downvotes.length });
+    await doubt.save();
+    res.json({ voteScore: doubt.votes.upvotes.length - doubt.votes.downvotes.length });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }

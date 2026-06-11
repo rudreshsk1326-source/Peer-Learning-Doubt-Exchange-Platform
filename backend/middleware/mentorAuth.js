@@ -1,22 +1,16 @@
 const jwt = require('jsonwebtoken');
-const { readFile } = require('../utils/fileStorage');
+const User = require('../models/User');
 
-const requireMentor = (req, res, next) => {
+const requireMentor = async (req, res, next) => {
   try {
     const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ message: 'No token provided' });
-    }
+    if (!token) return res.status(401).json({ message: 'No token provided' });
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
-    const users = readFile('users.json');
-    const user = users.find(u => u.id === decoded.id);
+    const user = await User.findById(decoded.id);
+    if (!user) return res.status(401).json({ message: 'User not found' });
 
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
-    }
-
-    if (user.role !== 'mentor' && !user.isVerifiedMentor) {
+    if (user.role !== 'mentor' && user.role !== 'admin') {
       return res.status(403).json({ message: 'Access denied. Mentor privileges required.' });
     }
 

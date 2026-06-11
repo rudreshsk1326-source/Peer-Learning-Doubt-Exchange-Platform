@@ -1,64 +1,26 @@
 const express = require('express');
-const jwt = require('jsonwebtoken');
-const { readFile, writeFile } = require('../utils/fileStorage');
+const auth = require('../middleware/auth');
+const User = require('../models/User');
+const Doubt = require('../models/Doubt');
+const Answer = require('../models/Answer');
 
 const router = express.Router();
 
-// Auth middleware
-const auth = (req, res, next) => {
-  try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
-    if (!token) {
-      return res.status(401).json({ message: 'No token provided' });
-    }
-
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret');
-    const users = readFile('users.json');
-    const user = users.find(u => u.id === decoded.id);
-
-    if (!user) {
-      return res.status(401).json({ message: 'User not found' });
-    }
-
-    req.user = user;
-    next();
-  } catch (error) {
-    res.status(401).json({ message: 'Invalid token' });
-  }
-};
-
 // Get user profile
-router.get('/:id', (req, res) => {
+router.get('/:id', async (req, res) => {
   try {
-    const users = readFile('users.json');
-    const doubts = readFile('doubts.json');
-    const answers = readFile('answers.json');
+    const user = await User.findById(req.params.id).lean();
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
-    const user = users.find(u => u.id === req.params.id);
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    const userDoubts = doubts.filter(d => d.authorId === user.id);
-    const userAnswers = answers.filter(a => a.authorId === user.id);
-    const acceptedAnswers = userAnswers.filter(a => a.isAccepted);
+    const [doubtsAsked, answersGiven] = await Promise.all([
+      Doubt.countDocuments({ author: user._id }),
+      Answer.countDocuments({ author: user._id })
+    ]);
+    const acceptedAnswers = await Answer.countDocuments({ author: user._id, isAccepted: true });
 
     res.json({
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: user.role,
-        isVerified: user.isVerified,
-        reputation: user.reputation || 0,
-        createdAt: user.createdAt
-      },
-      stats: {
-        doubtsAsked: userDoubts.length,
-        answersGiven: userAnswers.length,
-        acceptedAnswers: acceptedAnswers.length,
-        reputation: user.reputation || 0
-      }
+      user: { id: user._id, name: user.name, email: user.email, role: user.role, isVerified: user.isVerified, reputation: user.reputation || 0, createdAt: user.createdAt },
+      stats: { doubtsAsked, answersGiven, acceptedAnswers, reputation: user.reputation || 0 }
     });
   } catch (error) {
     res.status(500).json({ message: error.message });
@@ -66,41 +28,22 @@ router.get('/:id', (req, res) => {
 });
 
 // Get all users
-router.get('/', (req, res) => {
+router.get('/', async (req, res) => {
   try {
-    const users = readFile('users.json');
-    const usersWithoutPassword = users.map(user => ({
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      role: user.role,
-      isVerified: user.isVerified,
-      reputation: user.reputation || 0,
-      createdAt: user.createdAt
-    }));
-
-    res.json({ users: usersWithoutPassword });
+    const users = await User.find().select('-password').lean();
+    res.json({ users: users.map(u => ({ ...u, id: u._id })) });
   } catch (error) {
     res.status(500).json({ message: error.message });
   }
 });
 
 // Verify user (admin only)
-router.patch('/:id/verify', auth, (req, res) => {
+router.patch('/:id/verify', auth, async (req, res) => {
   try {
-    if (req.user.role !== 'admin') {
-      return res.status(403).json({ message: 'Access denied' });
-    }
+    if (req.user.role !== 'admin') return res.status(403).json({ message: 'Access denied' });
 
-    const users = readFile('users.json');
-    const user = users.find(u => u.id === req.params.id);
-
-    if (!user) {
-      return res.status(404).json({ message: 'User not found' });
-    }
-
-    user.isVerified = true;
-    writeFile('users.json', users);
+    const user = await User.findByIdAndUpdate(req.params.id, { isVerified: true });
+    if (!user) return res.status(404).json({ message: 'User not found' });
 
     res.json({ message: 'User verified successfully' });
   } catch (error) {

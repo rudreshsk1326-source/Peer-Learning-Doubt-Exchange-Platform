@@ -1,46 +1,12 @@
-const { readFile, writeFile, generateId } = require('../utils/fileStorage');
+const mongoose = require('mongoose');
 
-class Notification {
-  constructor(data) {
-    this.id = data.id || generateId();
-    this.userId = data.userId;
-    this.type = data.type;
-    this.questionId = data.questionId;
-    this.answerId = data.answerId;
-    this.message = data.message;
-    this.isRead = data.isRead || false;
-    this.createdAt = data.createdAt || new Date().toISOString();
-  }
+const notificationSchema = new mongoose.Schema({
+  userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+  type: { type: String, required: true },
+  questionId: { type: mongoose.Schema.Types.ObjectId, ref: 'Doubt' },
+  answerId: { type: mongoose.Schema.Types.ObjectId, ref: 'Answer' },
+  message: { type: String, required: true },
+  isRead: { type: Boolean, default: false }
+}, { timestamps: true });
 
-  static getAll() {
-    return readFile('notifications.json');
-  }
-
-  static getByUserId(userId) {
-    const notifications = this.getAll();
-    return notifications.filter(n => n.userId === userId).sort((a, b) => 
-      new Date(b.createdAt) - new Date(a.createdAt)
-    );
-  }
-
-  static create(data) {
-    const notifications = this.getAll();
-    const notification = new Notification(data);
-    notifications.push(notification);
-    writeFile('notifications.json', notifications);
-    return notification;
-  }
-
-  static markAsRead(id) {
-    const notifications = this.getAll();
-    const notification = notifications.find(n => n.id === id);
-    if (notification) {
-      notification.isRead = true;
-      writeFile('notifications.json', notifications);
-      return notification;
-    }
-    return null;
-  }
-}
-
-module.exports = Notification;
+module.exports = mongoose.model('Notification', notificationSchema);
